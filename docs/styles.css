@@ -69,7 +69,7 @@ td:first-child { font-weight: 750; overflow-wrap: anywhere; min-width: 135px; ma
 .page-actions { gap: 7px; justify-content: end; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .page-actions button { min-width: 44px; }
 .page-body { background: #e5ede7; padding: 13px; min-height: 120px; border-radius: 0 0 17px 17px; text-align: center; }
-.page-body img { display: block; width: min(100%, 820px); height: auto; margin-inline: auto; background: white; }
+.page-body img, .page-body canvas { display: block; width: min(100%, 820px); height: auto; margin-inline: auto; background: white; }
 .page-body button { margin-top: 9px; }
 dialog { width: min(460px, calc(100% - 32px)); border: 1px solid var(--line); border-radius: 18px; color: inherit; padding: 22px; }
 dialog::backdrop { background: #182e2777; }

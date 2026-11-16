@@ -7,8 +7,8 @@
   <meta name="theme-color" content="#edf3ee">
   <title>Самостоятельная работа</title>
   <link rel="icon" href="./icon.svg">
-  <link rel="stylesheet" href="./styles.css">
-  <script type="module" src="./app.mjs"></script>
+  <link rel="stylesheet" href="./styles.css?v=sites-pilot-1">
+  <script type="module" src="./app.mjs?v=sites-pilot-1"></script>
 </head>
 <body>
   <header class="top">
@@ -26,6 +26,7 @@
         <label>Время на выполнение, мин<input name="minutes" type="number" min="1" max="180" value="30" required></label>
         <label class="span">Задание в PDF<input name="pdf" type="file" accept="application/pdf,.pdf" required><small>До 8 МБ, не более 30 страниц</small></label>
         <label class="span">Ключ учителя<input name="key" type="password" autocomplete="off" required></label>
+        <p class="span" id="pilot-info" hidden>Тест для взрослых. Используйте вымышленные имена и демонстрационные задания.</p>
         <div class="span actions"><button type="submit">Открыть регистрацию</button><button id="resume" type="button" class="secondary" hidden>Вернуться к работе</button></div>
       </form>
     </section>
@@ -59,7 +60,8 @@
     <section id="join" hidden>
       <div class="intro"><h1 id="join-title">Самостоятельная работа</h1><p id="join-info"></p></div>
       <form id="join-form" class="card form compact">
-        <label class="span">Имя и фамилия<input name="name" placeholder="Например, Анна Иванова" maxlength="70" autocomplete="off" required></label>
+        <label class="span">Имя и фамилия<input name="name" placeholder="Например, Ученик 1" maxlength="70" autocomplete="off" required></label>
+        <p class="span" id="pilot-join-info" hidden>Тест для взрослых. Введите вымышленное имя.</p>
         <p class="span">Во время работы оставайтесь на этой странице. Учитель увидит переключения и потерю связи.</p>
         <div class="span"><button type="submit">Зарегистрироваться</button></div>
       </form>
@@ -76,7 +78,7 @@
           <span id="page-count"></span>
           <button id="next" class="secondary" aria-label="Следующая страница">→</button>
         </div></div>
-        <div id="page-body" class="page-body"><p id="pdf-message" role="status"></p><button id="retry-pdf" class="secondary" hidden>Повторить</button><img id="pdf-page" alt="" hidden></div>
+        <div id="page-body" class="page-body"><p id="pdf-message" role="status"></p><button id="retry-pdf" class="secondary" hidden>Повторить</button><img id="pdf-page" alt="" hidden><canvas id="pdf-canvas" hidden></canvas></div>
       </div>
     </section>
     <dialog id="confirm"><form method="dialog"><h2>Завершить работу?</h2><p>Таймер остановится, задание закроется у всех учеников.</p><div class="actions"><button value="cancel" class="secondary">Продолжить работу</button><button value="end" class="danger">Завершить</button></div></form></dialog>

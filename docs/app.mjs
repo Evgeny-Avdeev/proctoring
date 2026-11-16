@@ -1,9 +1,26 @@
-import { API_ORIGIN } from './config.mjs';
+import { API_ORIGIN, PDF_IN_BROWSER } from './config.mjs?v=sites-pilot-1';
 
 const $ = id => document.getElementById(id);
 const route = new URL(location.href);
 const roomId = route.searchParams.get('room');
 const api = (API_ORIGIN || location.origin).replace(/\/$/, '') + '/api';
+const browserPdf = Boolean(API_ORIGIN) && PDF_IN_BROWSER;
+const pdfBuild = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@5.6.205/';
+let pdfRenderer;
+
+async function openPdf(data) {
+  pdfRenderer ||= import(pdfBuild + 'build/pdf.min.mjs').catch(() => {
+    pdfRenderer = null;
+    throw new Error('Модуль просмотра PDF недоступен. Проверьте подключение и повторите попытку.');
+  });
+  const library = await pdfRenderer;
+  library.GlobalWorkerOptions.workerSrc = pdfBuild + 'build/pdf.worker.min.mjs';
+  return library.getDocument({
+    data, enableXfa: false, isEvalSupported: false,
+    cMapUrl: pdfBuild + 'cmaps/', cMapPacked: true,
+    standardFontDataUrl: pdfBuild + 'standard_fonts/', wasmUrl: pdfBuild + 'wasm/'
+  }).promise;
+}
 const missingBackend = !API_ORIGIN && location.hostname.endsWith('.github.io');
 const roomPath = id => '/rooms/' + encodeURIComponent(id);
 const statuses = {
@@ -161,6 +178,21 @@ $('create').addEventListener('submit', event => {
     const pdf = fields.get('pdf');
     if (pdf.size > 8 * 1024 * 1024) throw new Error('Выберите PDF размером до 8 МБ.');
     const query = new URLSearchParams({ title: fields.get('title'), minutes: fields.get('minutes') });
+    if (browserPdf) {
+      let document;
+      try {
+        document = await openPdf(new Uint8Array(await pdf.arrayBuffer()));
+        query.set('pages', document.numPages);
+        if (document.numPages > 30) throw new Error('Допускается не более 30 страниц PDF.');
+      } catch (err) {
+        if (err.name === 'PasswordException' || err.name === 'InvalidPDFException') {
+          throw new Error('Выберите исправный PDF без пароля.');
+        }
+        throw err;
+      } finally {
+        if (document) await document.destroy();
+      }
+    }
     const result = await request('/rooms?' + query, {
       method: 'POST', body: pdf, key: String(fields.get('key')).trim(), type: 'application/pdf'
     });
@@ -205,6 +237,7 @@ let lockPending = false;
 let visiblePage = 1;
 let imageUrl;
 let imageVersion = 0;
+let assignmentPdf;
 let lastState;
 let statusError = '';
 let sendingPeriodic = false;
@@ -248,17 +281,40 @@ async function displayPage(page) {
   $('prev').disabled = page === 1;
   $('next').disabled = page === room.pages;
   show('pdf-page', false);
+  show('pdf-canvas', false);
   show('retry-pdf', false);
   write('pdf-message', 'Загружается страница…');
   try {
     const query = new URLSearchParams({ student: student.id });
-    const blob = await request(roomPath(roomId) + '/pages/' + page + '?' + query, { key: student.secret, binary: true });
-    if (version !== imageVersion) return;
-    if (imageUrl) URL.revokeObjectURL(imageUrl);
-    imageUrl = URL.createObjectURL(blob);
-    $('pdf-page').alt = 'Страница ' + page + ' задания';
-    $('pdf-page').src = imageUrl;
-    show('pdf-page');
+    const options = { key: student.secret, binary: true };
+    const base = roomPath(roomId);
+    if (browserPdf) {
+      assignmentPdf ||= request(base + '/pdf?' + query, options)
+        .then(async blob => openPdf(new Uint8Array(await blob.arrayBuffer())))
+        .catch(err => { assignmentPdf = null; throw err; });
+      const pdf = await assignmentPdf;
+      if (version !== imageVersion) return;
+      const sheet = await pdf.getPage(page);
+      const original = sheet.getViewport({ scale: 1 });
+      const viewport = sheet.getViewport({ scale: 1600 / Math.max(original.width, original.height) });
+      const canvas = document.createElement('canvas');
+      canvas.id = 'pdf-canvas';
+      canvas.setAttribute('role', 'img');
+      canvas.setAttribute('aria-label', 'Страница ' + page + ' задания');
+      canvas.width = Math.ceil(viewport.width);
+      canvas.height = Math.ceil(viewport.height);
+      await sheet.render({ canvas, viewport }).promise;
+      if (version !== imageVersion) return;
+      $('pdf-canvas').replaceWith(canvas);
+    } else {
+      const blob = await request(base + '/pages/' + page + '?' + query, options);
+      if (version !== imageVersion) return;
+      if (imageUrl) URL.revokeObjectURL(imageUrl);
+      imageUrl = URL.createObjectURL(blob);
+      $('pdf-page').alt = 'Страница ' + page + ' задания';
+      $('pdf-page').src = imageUrl;
+      show('pdf-page');
+    }
     write('pdf-message', '');
   } catch (err) {
     if (version !== imageVersion) return;
@@ -278,8 +334,16 @@ function studentPanel(data) {
   show('student-clock-box', running);
   show('assignment', running);
   if (running && !wasRunning) void displayPage(visiblePage);
-  if (!running && wasRunning) {
+  if (!running && (wasRunning || assignmentPdf || imageUrl)) {
     ++imageVersion;
+    if (assignmentPdf) {
+      void assignmentPdf.then(pdf => pdf.destroy()).catch(() => {});
+      assignmentPdf = null;
+    }
+    const canvas = $('pdf-canvas');
+    show('pdf-canvas', false);
+    canvas.width = 0;
+    canvas.height = 0;
     if (imageUrl) URL.revokeObjectURL(imageUrl);
     imageUrl = null;
     $('pdf-page').removeAttribute('src');
@@ -362,6 +426,9 @@ function attentionChanged() {
   void wakeLock(active && room?.phase === 'running');
   studentStatus();
 }
+
+show('pilot-info', browserPdf);
+show('pilot-join-info', browserPdf);
 
 if (missingBackend) {
   view(roomId ? 'join' : 'setup');

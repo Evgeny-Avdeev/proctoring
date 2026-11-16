@@ -1,3 +1,5 @@
-// Для GitHub Pages укажите публичный HTTPS-адрес сервера без косой черты в конце.
-// При локальном запуске оставьте пустым.
-export const API_ORIGIN = '';
+// Адрес API взрослого пилота. Для локального Node-сервера оставьте пустую строку.
+export const API_ORIGIN = 'https://proctoring-api.evgeny-e-avdeev.chatgpt.site';
+
+// Sites отдаёт PDF, который рисует браузер. Node-сервер отдаёт изображения страниц.
+export const PDF_IN_BROWSER = true;
