@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <meta name="theme-color" content="#edf3ee">
+  <title>Самостоятельная работа</title>
+  <link rel="icon" href="./icon.svg">
+  <link rel="stylesheet" href="./styles.css">
+  <script type="module" src="./app.mjs"></script>
+</head>
+<body>
+  <header class="top">
+    <div class="top-inner">
+      <a href="./" class="brand"><img src="./icon.svg" alt="" width="40" height="40">Самостоятельная работа</a>
+      <span id="role" class="role">Панель учителя</span>
+    </div>
+  </header>
+  <main>
+    <p id="connection" class="notice error" role="status" hidden></p>
+    <section id="setup" hidden>
+      <div class="intro"><h1>Новая работа</h1><p>Загрузите задание, откройте регистрацию и отправьте ссылку классу.</p></div>
+      <form id="create" class="card form">
+        <label>Название работы<input name="title" maxlength="100" placeholder="Например, Дроби и проценты" required></label>
+        <label>Время на выполнение, мин<input name="minutes" type="number" min="1" max="180" value="30" required></label>
+        <label class="span">Задание в PDF<input name="pdf" type="file" accept="application/pdf,.pdf" required><small>До 8 МБ, не более 30 страниц</small></label>
+        <label class="span">Ключ учителя<input name="key" type="password" autocomplete="off" required></label>
+        <div class="span actions"><button type="submit">Открыть регистрацию</button><button id="resume" type="button" class="secondary" hidden>Вернуться к работе</button></div>
+      </form>
+    </section>
+    <section id="teacher" hidden>
+      <div class="split intro">
+        <div><p id="phase" class="phase"></p><h1 id="teacher-title"></h1></div>
+        <div class="clock-block"><span id="teacher-clock-label">До окончания</span><strong id="teacher-clock" class="clock"></strong></div>
+      </div>
+      <div id="invite" class="card invite">
+        <div><h2>Ссылка для учеников</h2><p>Регистрация закрывается с началом работы.</p></div>
+        <div class="link-row"><input id="invite-link" aria-label="Ссылка для учеников" readonly><button id="copy" class="secondary">Копировать</button></div>
+      </div>
+      <div class="metrics">
+        <div class="card metric"><span>Зарегистрированы</span><strong id="total">0</strong></div>
+        <div class="card metric green"><span>На странице</span><strong id="active-count">0</strong></div>
+        <div class="card metric red"><span>Отошли / нет связи</span><strong id="away-count">0</strong></div>
+      </div>
+      <div class="card roster">
+        <div class="split roster-head"><div><h2>Ученики</h2><p id="panel-sync" aria-live="polite"></p></div><div class="actions">
+          <button id="start">Начать работу</button>
+          <button id="end" class="danger" hidden>Завершить</button>
+          <button id="new" class="secondary" hidden>Новая работа</button>
+        </div></div>
+        <p id="empty" class="empty">Список появится, когда ученики откроют ссылку и введут имя.</p>
+        <div id="roster-wrap" class="table-scroll" hidden><table>
+          <thead><tr><th scope="col">Имя ученика</th><th scope="col">Статус</th><th scope="col">Переключения</th><th scope="col">Последнее переключение</th></tr></thead>
+          <tbody id="students"></tbody>
+        </table></div>
+      </div>
+    </section>
+    <section id="join" hidden>
+      <div class="intro"><h1 id="join-title">Самостоятельная работа</h1><p id="join-info"></p></div>
+      <form id="join-form" class="card form compact">
+        <label class="span">Имя и фамилия<input name="name" placeholder="Например, Анна Иванова" maxlength="70" autocomplete="off" required></label>
+        <p class="span">Во время работы оставайтесь на этой странице. Учитель увидит переключения и потерю связи.</p>
+        <div class="span"><button type="submit">Зарегистрироваться</button></div>
+      </form>
+    </section>
+    <section id="student" hidden>
+      <div class="split intro">
+        <div><p id="student-phase" class="phase"></p><h1 id="student-title"></h1><p id="student-name"></p></div>
+        <div id="student-clock-box" class="clock-block" hidden><span>До окончания</span><strong id="student-clock" class="clock"></strong></div>
+      </div>
+      <div id="student-state" class="notice" role="status"></div>
+      <div id="assignment" class="card assignment" hidden>
+        <div class="split assignment-head"><h2>Задание</h2><div class="page-actions">
+          <button id="prev" class="secondary" aria-label="Предыдущая страница">←</button>
+          <span id="page-count"></span>
+          <button id="next" class="secondary" aria-label="Следующая страница">→</button>
+        </div></div>
+        <div id="page-body" class="page-body"><p id="pdf-message" role="status"></p><button id="retry-pdf" class="secondary" hidden>Повторить</button><img id="pdf-page" alt="" hidden></div>
+      </div>
+    </section>
+    <dialog id="confirm"><form method="dialog"><h2>Завершить работу?</h2><p>Таймер остановится, задание закроется у всех учеников.</p><div class="actions"><button value="cancel" class="secondary">Продолжить работу</button><button value="end" class="danger">Завершить</button></div></form></dialog>
+  </main>
+</body>
+</html>
