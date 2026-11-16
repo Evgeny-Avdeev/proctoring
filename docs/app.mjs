@@ -94,6 +94,7 @@ function tick() {
   // Hide the task on time even while the next server update is in flight.
   if (student?.joined && room.phase === 'running' && remaining === 0) {
     show('assignment', false);
+    show('keep-screen-on', false);
     write('student-state', 'Время истекло.');
     void wakeLock(false);
   }
@@ -234,6 +235,7 @@ const studentStorage = 'classroom-student:' + api + ':' + roomId;
 let student = roomId ? saved(sessionStorage, studentStorage) : null;
 let lock;
 let lockPending = false;
+let wakeLockFailed = false;
 let visiblePage = 1;
 let imageUrl;
 let imageVersion = 0;
@@ -242,7 +244,12 @@ let lastState;
 let statusError = '';
 let sendingPeriodic = false;
 
-async function wakeLock(wanted) {
+function canKeepScreenOn() {
+  return student?.joined && room?.phase === 'running' && !document.hidden
+    && performance.now() - anchor < room.ends - room.now;
+}
+
+async function wakeLock(wanted = canKeepScreenOn()) {
   if (!wanted) {
     if (lock && !lock.released) await lock.release().catch(() => {});
     return;
@@ -252,9 +259,11 @@ async function wakeLock(wanted) {
   try {
     lock = await navigator.wakeLock.request('screen');
     lock.addEventListener('release', studentStatus, { once: true });
-    if (room?.phase !== 'running' || document.hidden || !document.hasFocus()) await lock.release();
+    wakeLockFailed = false;
+    if (!canKeepScreenOn()) await lock.release();
   } catch {
     lock = null;
+    wakeLockFailed = true;
   } finally {
     lockPending = false;
     studentStatus();
@@ -262,6 +271,8 @@ async function wakeLock(wanted) {
 }
 const browserActive = () => !document.hidden && document.hasFocus();
 function studentStatus() {
+  const canKeepOn = canKeepScreenOn();
+  show('keep-screen-on', canKeepOn && Boolean(navigator.wakeLock) && (!lock || lock.released));
   if (!student?.joined || !room) return;
   if (room.phase === 'running' && performance.now() - anchor >= room.ends - room.now) return;
   $('student-state').classList.toggle('error', Boolean(statusError) || room.phase === 'running' && !browserActive());
@@ -270,7 +281,9 @@ function studentStatus() {
   else if (room.phase === 'ended') write('student-state', 'Работа завершена.');
   else if (!browserActive()) write('student-state', 'Страница неактивна. Вернитесь к заданию.');
   else if (lock && !lock.released) write('student-state', 'Страница активна. Автоблокировка экрана приостановлена.');
-  else write('student-state', 'Страница активна. Браузер может погасить экран по настройкам устройства.');
+  else if (!navigator.wakeLock) write('student-state', 'Этот браузер не поддерживает удержание экрана. Измените тайм-аут экрана в настройках устройства.');
+  else if (wakeLockFailed) write('student-state', 'Устройство не разрешило удерживать экран. Повторите попытку или измените тайм-аут экрана в настройках.');
+  else write('student-state', 'Экран может погаснуть. Включите удержание экрана.');
 }
 
 async function displayPage(page) {
@@ -348,7 +361,7 @@ function studentPanel(data) {
     imageUrl = null;
     $('pdf-page').removeAttribute('src');
   }
-  void wakeLock(running && browserActive());
+  void wakeLock();
   studentStatus();
   tick();
 }
@@ -418,12 +431,13 @@ $('join-form').addEventListener('submit', event => {
 $('prev').onclick = () => { void displayPage(visiblePage - 1); };
 $('next').onclick = () => { void displayPage(visiblePage + 1); };
 $('retry-pdf').onclick = () => { void displayPage(visiblePage); };
+$('keep-screen-on').onclick = () => { void wakeLock(); };
 function attentionChanged() {
   if (!student?.joined || room?.phase === 'ended') return;
   const active = browserActive();
   const state = active ? 'active' : 'away';
   if (lastState !== state) signalState(state);
-  void wakeLock(active && room?.phase === 'running');
+  void wakeLock();
   studentStatus();
 }
 
