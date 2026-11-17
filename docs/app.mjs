@@ -96,7 +96,7 @@ function tick() {
     show('assignment', false);
     show('keep-screen-on', false);
     write('student-state', 'Время истекло.');
-    void wakeLock(false);
+    void wakeLock();
   }
 }
 setInterval(tick, 250);
@@ -235,7 +235,11 @@ const studentStorage = 'classroom-student:' + api + ':' + roomId;
 let student = roomId ? saved(sessionStorage, studentStorage) : null;
 let lock;
 let lockPending = false;
-let wakeLockFailed = false;
+let wakeLockAttempted = false;
+let wakeLockRetried = false;
+let wakeLockInterrupted = false;
+let wakeLockError = '';
+let pageLeaving = false;
 let visiblePage = 1;
 let imageUrl;
 let imageVersion = 0;
@@ -245,34 +249,85 @@ let statusError = '';
 let sendingPeriodic = false;
 
 function canKeepScreenOn() {
-  return student?.joined && room?.phase === 'running' && !document.hidden
+  return student?.joined && room?.phase === 'running' && !pageLeaving && !document.hidden
     && performance.now() - anchor < room.ends - room.now;
 }
 
-async function wakeLock(wanted = canKeepScreenOn()) {
-  if (!wanted) {
-    if (lock && !lock.released) await lock.release().catch(() => {});
+const supportsWakeLock = () => typeof navigator.wakeLock?.request === 'function';
+
+function wakeLockFailure(error) {
+  const policy = document.permissionsPolicy ?? document.featurePolicy;
+  if (policy?.features?.().includes('screen-wake-lock') && !policy.allowsFeature('screen-wake-lock')) {
+    return 'Политика безопасности страницы запрещает удержание экрана. Сообщите учителю.';
+  }
+  if (error?.name === 'NotAllowedError') {
+    return 'Браузер отклонил запрос на удержание экрана. Возможны ограничения устройства, например энергосбережение или низкий заряд. Повторите попытку.';
+  }
+  return 'Не удалось включить удержание экрана. Повторите попытку.';
+}
+
+function releaseScreenLock(sentinel) {
+  return sentinel?.released === false ? sentinel.release().catch(error => {
+    console.warn('Screen Wake Lock release:', error?.name, error?.message);
+  }) : undefined;
+}
+
+function screenLockReleased(sentinel) {
+  if (lock !== sentinel) return;
+  lock = null;
+  wakeLockInterrupted = true;
+  studentStatus();
+  // Recover once per visible period. A device may revoke every granted lock.
+  if (canKeepScreenOn() && !wakeLockRetried) {
+    wakeLockRetried = true;
+    void wakeLock({ retry: true });
+  }
+}
+
+async function wakeLock({ retry = false } = {}) {
+  if (!canKeepScreenOn()) {
+    wakeLockAttempted = false;
+    wakeLockRetried = false;
+    wakeLockInterrupted = false;
+    wakeLockError = '';
+    const sentinel = lock;
+    lock = null;
+    await releaseScreenLock(sentinel);
     return;
   }
-  if (!navigator.wakeLock || lockPending || lock && !lock.released) return;
+  if (!window.isSecureContext || !supportsWakeLock() || lockPending || lock
+      || wakeLockAttempted && !retry) return;
   lockPending = true;
+  wakeLockAttempted = true;
+  studentStatus();
   try {
-    lock = await navigator.wakeLock.request('screen');
-    lock.addEventListener('release', studentStatus, { once: true });
-    wakeLockFailed = false;
-    if (!canKeepScreenOn()) await lock.release();
-  } catch {
-    lock = null;
-    wakeLockFailed = true;
+    const sentinel = await navigator.wakeLock.request('screen');
+    // A visibility or session change may invalidate an in-flight request.
+    if (!wakeLockAttempted || !canKeepScreenOn()) {
+      await releaseScreenLock(sentinel);
+    } else {
+      lock = sentinel;
+      wakeLockError = '';
+      wakeLockInterrupted = false;
+      lock.addEventListener('release', () => screenLockReleased(sentinel), { once: true });
+    }
+  } catch (error) {
+    if (wakeLockAttempted && canKeepScreenOn()) {
+      wakeLockError = wakeLockFailure(error);
+      console.warn('Screen Wake Lock request:', error?.name, error?.message);
+    }
   } finally {
     lockPending = false;
     studentStatus();
+    if (lock?.released) screenLockReleased(lock);
+    if (!wakeLockAttempted && canKeepScreenOn()) void wakeLock();
   }
 }
 const browserActive = () => !document.hidden && document.hasFocus();
 function studentStatus() {
   const canKeepOn = canKeepScreenOn();
-  show('keep-screen-on', canKeepOn && Boolean(navigator.wakeLock) && (!lock || lock.released));
+  show('keep-screen-on', canKeepOn && window.isSecureContext && supportsWakeLock()
+    && !lockPending && (!lock || lock.released));
   if (!student?.joined || !room) return;
   if (room.phase === 'running' && performance.now() - anchor >= room.ends - room.now) return;
   $('student-state').classList.toggle('error', Boolean(statusError) || room.phase === 'running' && !browserActive());
@@ -281,8 +336,11 @@ function studentStatus() {
   else if (room.phase === 'ended') write('student-state', 'Работа завершена.');
   else if (!browserActive()) write('student-state', 'Страница неактивна. Вернитесь к заданию.');
   else if (lock && !lock.released) write('student-state', 'Страница активна. Автоблокировка экрана приостановлена.');
-  else if (!navigator.wakeLock) write('student-state', 'Этот браузер не поддерживает удержание экрана. Измените тайм-аут экрана в настройках устройства.');
-  else if (wakeLockFailed) write('student-state', 'Устройство не разрешило удерживать экран. Повторите попытку или измените тайм-аут экрана в настройках.');
+  else if (!window.isSecureContext) write('student-state', 'Для удержания экрана откройте страницу по HTTPS.');
+  else if (!supportsWakeLock()) write('student-state', 'В этом браузере или режиме запуска удержание экрана недоступно. Экран может погаснуть по тайм-ауту устройства.');
+  else if (lockPending) write('student-state', 'Запрашиваем удержание экрана…');
+  else if (wakeLockError) write('student-state', wakeLockError);
+  else if (wakeLockInterrupted) write('student-state', 'Браузер снял удержание экрана. Нажмите «Не гасить экран», чтобы повторить попытку.');
   else write('student-state', 'Экран может погаснуть. Включите удержание экрана.');
 }
 
@@ -431,7 +489,7 @@ $('join-form').addEventListener('submit', event => {
 $('prev').onclick = () => { void displayPage(visiblePage - 1); };
 $('next').onclick = () => { void displayPage(visiblePage + 1); };
 $('retry-pdf').onclick = () => { void displayPage(visiblePage); };
-$('keep-screen-on').onclick = () => { void wakeLock(); };
+$('keep-screen-on').onclick = () => { void wakeLock({ retry: true }); };
 function attentionChanged() {
   if (!student?.joined || room?.phase === 'ended') return;
   const active = browserActive();
@@ -455,8 +513,16 @@ if (missingBackend) {
   document.addEventListener('visibilitychange', attentionChanged);
   window.addEventListener('focus', attentionChanged);
   window.addEventListener('blur', attentionChanged);
-  window.addEventListener('pageshow', attentionChanged);
-  window.addEventListener('pagehide', () => signalState('away', true));
+  window.addEventListener('pageshow', () => {
+    pageLeaving = false;
+    attentionChanged();
+  });
+  window.addEventListener('pagehide', () => {
+    pageLeaving = true;
+    void wakeLock();
+    studentStatus();
+    signalState('away', true);
+  });
   window.addEventListener('online', () => { if (student?.joined) signalState(); else void registration(); });
   setInterval(() => {
     if (student?.joined) signalState(undefined, false, true);
