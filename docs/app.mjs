@@ -1,4 +1,4 @@
-import { API_ORIGIN, PDF_IN_BROWSER } from './config.mjs?v=sites-pilot-1';
+import { API_ORIGIN, PDF_IN_BROWSER } from './config.mjs?v=vps-1';
 
 const $ = id => document.getElementById(id);
 const route = new URL(location.href);
